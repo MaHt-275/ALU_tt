@@ -20,7 +20,9 @@ assign b_op = mod_sub ? ~in_b : in_b;//forma corta de un if/else, si esta activo
 //b_op//
 
 always @(*)begin
-        result = in_a + b_op + carry_in; //Se realiza la operación aritmética sumando los valores de entrada A y B modificados// 
+        result = {1'b0, in_a}
+       + {1'b0, b_op}
+       + {{8{1'b0}}, carry_in}; //Se realiza la operación aritmética sumando los valores de entrada A y B modificados// 
         //junto con el bit de acarreo de entrada//
         arit_out  = result[7:0];
         carry_out = result[8];

@@ -1,10 +1,10 @@
 # info.yaml
 # Tiny Tapeout project information
 project:
-  title:        "ALU de 8 bits (aritmetica, logica y desplazador)"
+  title:        "ALU de 8 bits"
   author:       "Joaquín O'Ryan"
   discord:      "oryan01"
-  description:  "ALU de 8 bits con decodificador serie de 3 bytes (instruccion/A/B): suma/resta, AND/OR/XOR/NOT y desplazador logico/aritmetico"
+  description:  "aaaaaaaaaaaaa"
   language:     "Verilog"
   clock_hz:     10000000
 

@@ -2,62 +2,39 @@
 # SPDX-FileCopyrightText: © 2026 Joaquín O'Ryan
 # SPDX-License-Identifier: Apache-2.0
 
-"""Integration tests for the complete Tiny Tapeout wrapper.
-
-Protocol: three bytes are sent through ui_in:
-    1) instruction
-    2) operand A
-    3) operand B
-
-Flags are exposed on uio_out:
-    bit 0 = carry
-    bit 1 = negative
-    bit 2 = overflow
-    bit 3 = zero
-"""
-
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, ClockCycles, Timer, ReadWrite
 
-
 MASK8 = 0xFF
 
 
-def make_instr(select, shift_iz_der=0, shift_arit_right=0, shift_amount=0,
-               mod_sub=0, carry_in=0, op=0):
-    """Build the instruction byte expected by decoder_alu.v."""
+def make_instr(select, shift_iz_der=0, shift_arit_right=0,
+               shift_amount=0, mod_sub=0, carry_in=0, op=0):
 
     instr = (select & 0b11) << 6
 
-    if select == 0b00:  # barrel shifter
+    if select == 0b00:
         instr |= (shift_iz_der & 1) << 5
         instr |= (shift_arit_right & 1) << 4
         instr |= (shift_amount & 0b111) << 1
 
-    elif select == 0b01:  # arithmetic
+    elif select == 0b01:
         instr |= (mod_sub & 1) << 5
         instr |= (carry_in & 1) << 4
 
-    elif select == 0b10:  # logic
+    elif select == 0b10:
         instr |= (op & 0b11) << 4
 
     return instr & MASK8
 
 
 def signed8(value):
-    """Interpret an 8-bit value as signed two's complement."""
-
     value &= MASK8
-
-    if value & 0x80:
-        return value - 256
-
-    return value
+    return value - 256 if value & 0x80 else value
 
 
 def arithmetic_expected(a, b, mod_sub, carry_in):
-    """Independent reference model for the arithmetic block."""
 
     b_op = (~b if mod_sub else b) & MASK8
 
@@ -74,18 +51,16 @@ def arithmetic_expected(a, b, mod_sub, carry_in):
 
 
 def flags_expected(result, carry=0, overflow=0):
-    """Expected ALU flags."""
 
     return {
         "carry": carry & 1,
         "negative": (result >> 7) & 1,
         "overflow": overflow & 1,
-        "zero": int((result & MASK8) == 0),
+        "zero": int(result == 0),
     }
 
 
 def read_flags(dut):
-    """Read the four ALU flags from uio_out[3:0]."""
 
     flags = dut.uio_out.value.integer & 0x0F
 
@@ -97,38 +72,54 @@ def read_flags(dut):
     }
 
 
+async def wait_write_phase():
+    """
+    Ensure signal writes occur in Cocotb's writable phase.
+    """
+    await ReadWrite()
+
+
 async def run_operation(dut, instr, a, b):
     """
-    Send one complete operation through the original
-    three-cycle serial protocol:
+    Exact decoder protocol:
 
-        cycle 1 -> instruction
-        cycle 2 -> A
-        cycle 3 -> B
+        clock 1 -> instruction
+        clock 2 -> A
+        clock 3 -> B
+
+    After clock 3 the decoder's registers contain
+    instruction, A and B and the ALU is combinational.
     """
 
-    # Make sure we are in a writable simulator phase.
-    await ReadWrite()
+    # ------------------------------------------------------------
+    # Cycle 0: instruction
+    # ------------------------------------------------------------
+
+    await wait_write_phase()
     dut.ui_in.value = instr & MASK8
 
-    # Instruction is captured by decoder_alu.
     await RisingEdge(dut.clk)
 
-    # Return to a writable phase before changing ui_in.
-    await ReadWrite()
+    # ------------------------------------------------------------
+    # Cycle 1: operand A
+    # ------------------------------------------------------------
+
+    await wait_write_phase()
     dut.ui_in.value = a & MASK8
 
-    # Operand A is captured.
     await RisingEdge(dut.clk)
 
-    # Return to a writable phase before changing ui_in.
-    await ReadWrite()
+    # ------------------------------------------------------------
+    # Cycle 2: operand B
+    # ------------------------------------------------------------
+
+    await wait_write_phase()
     dut.ui_in.value = b & MASK8
 
-    # Operand B is captured.
     await RisingEdge(dut.clk)
 
-    # Give combinational ALU logic time to settle.
+    # Allow all nonblocking assignments and combinational
+    # logic to settle.
     await Timer(1, unit="ns")
 
 
@@ -141,7 +132,6 @@ async def check_operation(
     expected,
     expected_flags
 ):
-    """Run one operation and verify result and flags."""
 
     await run_operation(
         dut,
@@ -155,14 +145,16 @@ async def check_operation(
 
     assert actual == expected, (
         f"{name}: result mismatch: "
-        f"A=0x{a:02X}, B=0x{b:02X}, "
+        f"A=0x{a:02X}, "
+        f"B=0x{b:02X}, "
         f"expected=0x{expected:02X}, "
         f"got=0x{actual:02X}"
     )
 
     assert actual_flags == expected_flags, (
         f"{name}: flags mismatch: "
-        f"A=0x{a:02X}, B=0x{b:02X}, "
+        f"A=0x{a:02X}, "
+        f"B=0x{b:02X}, "
         f"expected={expected_flags}, "
         f"got={actual_flags}"
     )
@@ -173,45 +165,61 @@ async def test_project(dut):
 
     dut._log.info("Starting complete ALU integration test")
 
-    # 10 us clock period.
+    # ------------------------------------------------------------
+    # CLOCK
+    # ------------------------------------------------------------
+
     clock = Clock(dut.clk, 10, unit="us")
     cocotb.start_soon(clock.start())
 
-    # ------------------------------------------------------------------
-    # INITIAL STATE
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # INITIAL VALUES
+    # ------------------------------------------------------------
 
-    # All writes are performed after entering ReadWrite phase.
-    await ReadWrite()
+    await wait_write_phase()
 
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
+
+    # Tiny Tapeout reset is active LOW.
     dut.rst_n.value = 0
 
-    # Keep reset asserted for 10 clock cycles.
+    # ------------------------------------------------------------
+    # RESET
+    # ------------------------------------------------------------
+
     await ClockCycles(dut.clk, 10)
 
-    # IMPORTANT:
-    # ClockCycles can leave the coroutine in ReadOnly.
-    # Return explicitly to ReadWrite before modifying rst_n.
-    await ReadWrite()
+    # ClockCycles can leave us in ReadOnly.
+    # Return to a writable phase before changing rst_n.
+    await wait_write_phase()
 
-    # Release active-low reset.
+    # Release reset.
     dut.rst_n.value = 1
 
-    # Allow one complete clock cycle after reset release.
-    await ClockCycles(dut.clk, 1)
+    # IMPORTANT:
+    #
+    # Let one COMPLETE clock happen after reset release.
+    # This gives decoder_alu a clean counter=0 starting point.
+    #
+    await RisingEdge(dut.clk)
 
-    # ------------------------------------------------------------------
-    # ARITHMETIC: ADD
-    # ------------------------------------------------------------------
+    # Return to writable phase after the edge.
+    await wait_write_phase()
+
+    # Make sure the bus starts from a known value.
+    dut.ui_in.value = 0
+
+    # ------------------------------------------------------------
+    # ADD
+    # ------------------------------------------------------------
 
     for a, b, cin in [
-        (5, 3, 0),
-        (0xFF, 1, 0),
+        (0x05, 0x03, 0),
+        (0xFF, 0x01, 0),
         (0xFF, 0xFF, 1),
-        (0, 0, 0),
+        (0x00, 0x00, 0),
         (0x80, 0x80, 0),
     ]:
 
@@ -225,7 +233,10 @@ async def test_project(dut):
         await check_operation(
             dut,
             "ADD",
-            make_instr(1, carry_in=cin),
+            make_instr(
+                select=0b01,
+                carry_in=cin
+            ),
             a,
             b,
             expected,
@@ -236,9 +247,9 @@ async def test_project(dut):
             )
         )
 
-    # ------------------------------------------------------------------
-    # ARITHMETIC: SUB
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # SUB
+    # ------------------------------------------------------------
 
     for a, b, cin in [
         (10, 4, 1),
@@ -259,7 +270,7 @@ async def test_project(dut):
             dut,
             "SUB",
             make_instr(
-                1,
+                select=0b01,
                 mod_sub=1,
                 carry_in=cin
             ),
@@ -273,9 +284,9 @@ async def test_project(dut):
             )
         )
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
     # LOGIC
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     logic_vectors = [
         (0xF0, 0x3C),
@@ -301,16 +312,19 @@ async def test_project(dut):
             await check_operation(
                 dut,
                 f"LOGIC op={op:02b}",
-                make_instr(2, op=op),
+                make_instr(
+                    select=0b10,
+                    op=op
+                ),
                 a,
                 b,
                 expected,
                 flags_expected(expected)
             )
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
     # SHIFTS
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     shift_vectors = [
         0x00,
@@ -326,9 +340,7 @@ async def test_project(dut):
 
         for amount in range(8):
 
-            # ----------------------------------------------------------
-            # LEFT SHIFT
-            # ----------------------------------------------------------
+            # LEFT
 
             expected = (a << amount) & MASK8
 
@@ -342,7 +354,9 @@ async def test_project(dut):
                 dut,
                 "SHIFT LEFT",
                 make_instr(
-                    0,
+                    select=0b00,
+                    shift_iz_der=0,
+                    shift_arit_right=0,
                     shift_amount=amount
                 ),
                 a,
@@ -354,9 +368,7 @@ async def test_project(dut):
                 )
             )
 
-            # ----------------------------------------------------------
-            # LOGICAL RIGHT SHIFT
-            # ----------------------------------------------------------
+            # LOGICAL RIGHT
 
             expected = (a >> amount) & MASK8
 
@@ -370,7 +382,7 @@ async def test_project(dut):
                 dut,
                 "SHIFT RIGHT LOGICAL",
                 make_instr(
-                    0,
+                    select=0b00,
                     shift_iz_der=1,
                     shift_arit_right=0,
                     shift_amount=amount
@@ -384,19 +396,15 @@ async def test_project(dut):
                 )
             )
 
-            # ----------------------------------------------------------
-            # ARITHMETIC RIGHT SHIFT
-            # ----------------------------------------------------------
+            # ARITHMETIC RIGHT
 
-            expected = (
-                signed8(a) >> amount
-            ) & MASK8
+            expected = (signed8(a) >> amount) & MASK8
 
             await check_operation(
                 dut,
                 "SHIFT RIGHT ARITHMETIC",
                 make_instr(
-                    0,
+                    select=0b00,
                     shift_iz_der=1,
                     shift_arit_right=1,
                     shift_amount=amount
@@ -410,9 +418,9 @@ async def test_project(dut):
                 )
             )
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
     # PASS THROUGH
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     for a in [
         0x00,
@@ -425,11 +433,11 @@ async def test_project(dut):
         await check_operation(
             dut,
             "PASS THROUGH",
-            make_instr(3),
+            make_instr(select=0b11),
             a,
             0,
             a,
             flags_expected(a)
         )
 
-    dut._log.info("All integration tests passed")
+    dut._log.info("All ALU integration tests passed")

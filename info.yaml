@@ -2,7 +2,7 @@
 # Tiny Tapeout project information
 project:
   title:        "ALU de 8 bits"
-  author:       "Joaquín O'Ryan"
+  author:       "CASS PUCV"
   discord:      "oryan01"
   description:  "aaaaaaaaaaaaa"
   language:     "Verilog"

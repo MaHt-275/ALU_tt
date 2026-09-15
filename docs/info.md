@@ -1,20 +1,13 @@
-<!---
+---
+title:  "ALU TTIHP"
+author: "Joaquín O'Ryan"
+---
+# TTIHP ALU
 
-This file is used to generate your project datasheet. Please fill in the information below and delete any unused
-sections.
-
-You can also include images in this folder and reference them in the markdown. Each image must be less than
-512 kb in size, and the combined size of all images must be less than 1 MB.
--->
+Describe aquí una introducción general de tu proyecto.
 
 ## How it works
-
-Explain how your project works
+Esta ALU realiza operaciones aritméticas y lógicas. (Inserta aquí una breve descripción técnica de tu arquitectura y de cómo se comunican módulos como el barrel shifter y el decoder).
 
 ## How to test
-
-Explain how to use your project
-
-## External hardware
-
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+Para probar este diseño, se deben asignar los valores de entrada a través de los pines correspondientes y observar los resultados en los pines de salida. (Agrega un par de líneas sobre qué estímulos aplicas en tu testbench).

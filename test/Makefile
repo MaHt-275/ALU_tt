@@ -12,9 +12,13 @@ ifneq ($(GATES),yes)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 COMPILE_ARGS += -I $(SRC_DIR)
 else
-# Gate level simulation:
-# La Action de TT se encarga de inyectar las banderas del PDK de IHP automáticamente.
+# Gate level simulation for IHP (sg13g2)
+# Se incluye el netlist sintetizado y los modelos primitivos del PDK que exige Icarus
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
+# Si el entorno de Tiny Tapeout IHP expone las celdas primitivas del PDK, las enlazamos:
+ifdef PDK_ROOT
+VERILOG_SOURCES += $(PDK_ROOT)/sg13g2/libs.ref/sg13g2_ivt/verilog/sg13g2_ivt.v
+endif
 endif
 
 # Include the testbench sources:

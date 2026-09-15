@@ -5,8 +5,6 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-
-# Aquí declaramos todos los módulos de tu ALU
 PROJECT_SOURCES = project.v alu_top.v arithmetic.v barrel_shifter.v decoder_alu.v logic.v
 
 ifneq ($(GATES),yes)
@@ -15,13 +13,8 @@ VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 COMPILE_ARGS += -I $(SRC_DIR)
 else
 # Gate level simulation:
+# La Action de TT se encarga de inyectar las banderas del PDK de IHP automáticamente.
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
-# Banderas críticas para simular las celdas estándar de IHP
-COMPILE_ARGS += -DGL_TEST
-COMPILE_ARGS += -DFUNCTIONAL
-COMPILE_ARGS += -DUSE_POWER_PINS
-COMPILE_ARGS += -DSIM
-COMPILE_ARGS += -DUNIT_DELAY=\#1
 endif
 
 # Include the testbench sources:

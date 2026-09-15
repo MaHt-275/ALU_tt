@@ -4,36 +4,28 @@
 
 """Integration tests for the complete Tiny Tapeout wrapper.
 
-Protocol:
-    cycle 0 -> instruction
-    cycle 1 -> operand A
-    cycle 2 -> operand B
-    cycle 3 -> result is checked
+Protocol: three bytes are sent through ui_in:
+    1) instruction
+    2) operand A
+    3) operand B
 
-Flags:
-    uio_out[0] = carry
-    uio_out[1] = negative
-    uio_out[2] = overflow
-    uio_out[3] = zero
+Flags are exposed on uio_out:
+    bit 0 = carry
+    bit 1 = negative
+    bit 2 = overflow
+    bit 3 = zero
 """
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, ClockCycles, Timer, ReadOnly
+from cocotb.triggers import RisingEdge, ClockCycles, Timer, ReadWrite
 
 
 MASK8 = 0xFF
 
 
-def make_instr(
-    select,
-    shift_iz_der=0,
-    shift_arit_right=0,
-    shift_amount=0,
-    mod_sub=0,
-    carry_in=0,
-    op=0,
-):
+def make_instr(select, shift_iz_der=0, shift_arit_right=0, shift_amount=0,
+               mod_sub=0, carry_in=0, op=0):
     """Build the instruction byte expected by decoder_alu.v."""
 
     instr = (select & 0b11) << 6
@@ -54,16 +46,18 @@ def make_instr(
 
 
 def signed8(value):
+    """Interpret an 8-bit value as signed two's complement."""
+
     value &= MASK8
-    return value - 256 if value & 0x80 else value
+
+    if value & 0x80:
+        return value - 256
+
+    return value
 
 
 def arithmetic_expected(a, b, mod_sub, carry_in):
     """Independent reference model for the arithmetic block."""
-
-    a &= MASK8
-    b &= MASK8
-    carry_in &= 1
 
     b_op = (~b if mod_sub else b) & MASK8
 
@@ -72,35 +66,27 @@ def arithmetic_expected(a, b, mod_sub, carry_in):
     result = full & MASK8
     carry = (full >> 8) & 1
 
-    # Signed overflow:
-    # overflow occurs when A and B_op have the same sign
-    # and the result has the opposite sign.
     overflow = int(
-        ((a ^ b_op) & 0x80) == 0
-        and ((a ^ result) & 0x80) != 0
+        ((a ^ result) & (b_op ^ result) & 0x80) != 0
     )
 
     return result, carry, overflow
 
 
 def flags_expected(result, carry=0, overflow=0):
-    result &= MASK8
+    """Expected ALU flags."""
 
     return {
         "carry": carry & 1,
         "negative": (result >> 7) & 1,
         "overflow": overflow & 1,
-        "zero": int(result == 0),
+        "zero": int((result & MASK8) == 0),
     }
 
 
-async def settle(dut):
-    """Allow sequential/nonblocking and combinational logic to settle."""
-    await Timer(1, unit="ns")
-    await ReadOnly()
-
-
 def read_flags(dut):
+    """Read the four ALU flags from uio_out[3:0]."""
+
     flags = dut.uio_out.value.integer & 0x0F
 
     return {
@@ -111,41 +97,39 @@ def read_flags(dut):
     }
 
 
-async def send_transaction(dut, instr, a, b):
+async def run_operation(dut, instr, a, b):
     """
-    Send one complete transaction using the decoder's
-    original three-cycle serial protocol.
+    Send one complete operation through the original
+    three-cycle serial protocol:
 
-        cycle 0: instruction
-        cycle 1: A
-        cycle 2: B
-        cycle 3: settle/check
+        cycle 1 -> instruction
+        cycle 2 -> A
+        cycle 3 -> B
     """
 
-    # Instruction
+    # Make sure we are in a writable simulator phase.
+    await ReadWrite()
     dut.ui_in.value = instr & MASK8
-    await RisingEdge(dut.clk)
-    await settle(dut)
 
-    # Operand A
+    # Instruction is captured by decoder_alu.
+    await RisingEdge(dut.clk)
+
+    # Return to a writable phase before changing ui_in.
+    await ReadWrite()
     dut.ui_in.value = a & MASK8
-    await RisingEdge(dut.clk)
-    await settle(dut)
 
-    # Operand B
+    # Operand A is captured.
+    await RisingEdge(dut.clk)
+
+    # Return to a writable phase before changing ui_in.
+    await ReadWrite()
     dut.ui_in.value = b & MASK8
-    await RisingEdge(dut.clk)
-    await settle(dut)
 
-    # One complete additional clock cycle.
-    #
-    # This is intentional:
-    # reg_B is updated with a nonblocking assignment in
-    # decoder_alu.v. Waiting another edge guarantees that
-    # the newly captured B value has propagated through
-    # the combinational ALU before the result is sampled.
+    # Operand B is captured.
     await RisingEdge(dut.clk)
-    await settle(dut)
+
+    # Give combinational ALU logic time to settle.
+    await Timer(1, unit="ns")
 
 
 async def check_operation(
@@ -155,11 +139,18 @@ async def check_operation(
     a,
     b,
     expected,
-    expected_flags,
+    expected_flags
 ):
-    await send_transaction(dut, instr, a, b)
+    """Run one operation and verify result and flags."""
 
-    actual = dut.uo_out.value.integer & MASK8
+    await run_operation(
+        dut,
+        instr,
+        a,
+        b
+    )
+
+    actual = dut.uo_out.value.integer
     actual_flags = read_flags(dut)
 
     assert actual == expected, (
@@ -182,86 +173,95 @@ async def test_project(dut):
 
     dut._log.info("Starting complete ALU integration test")
 
-    # Keep the original clock configuration.
+    # 10 us clock period.
     clock = Clock(dut.clk, 10, unit="us")
     cocotb.start_soon(clock.start())
 
     # ------------------------------------------------------------------
-    # Reset
+    # INITIAL STATE
     # ------------------------------------------------------------------
+
+    # All writes are performed after entering ReadWrite phase.
+    await ReadWrite()
 
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
     dut.rst_n.value = 0
 
+    # Keep reset asserted for 10 clock cycles.
     await ClockCycles(dut.clk, 10)
 
+    # IMPORTANT:
+    # ClockCycles can leave the coroutine in ReadOnly.
+    # Return explicitly to ReadWrite before modifying rst_n.
+    await ReadWrite()
+
+    # Release active-low reset.
     dut.rst_n.value = 1
 
+    # Allow one complete clock cycle after reset release.
     await ClockCycles(dut.clk, 1)
-    await settle(dut)
 
     # ------------------------------------------------------------------
-    # Arithmetic: ADD
+    # ARITHMETIC: ADD
     # ------------------------------------------------------------------
 
-    add_vectors = [
-        (0x05, 0x03, 0),
-        (0xFF, 0x01, 0),
+    for a, b, cin in [
+        (5, 3, 0),
+        (0xFF, 1, 0),
         (0xFF, 0xFF, 1),
-        (0x00, 0x00, 0),
+        (0, 0, 0),
         (0x80, 0x80, 0),
-    ]
-
-    for a, b, cin in add_vectors:
+    ]:
 
         expected, carry, overflow = arithmetic_expected(
-            a, b, 0, cin
+            a,
+            b,
+            0,
+            cin
         )
 
         await check_operation(
             dut,
             "ADD",
-            make_instr(
-                0b01,
-                carry_in=cin,
-            ),
+            make_instr(1, carry_in=cin),
             a,
             b,
             expected,
             flags_expected(
                 expected,
                 carry,
-                overflow,
-            ),
+                overflow
+            )
         )
 
     # ------------------------------------------------------------------
-    # Arithmetic: SUB
+    # ARITHMETIC: SUB
     # ------------------------------------------------------------------
 
-    sub_vectors = [
-        (0x0A, 0x04, 1),
-        (0x00, 0x01, 1),
-        (0x03, 0x08, 1),
+    for a, b, cin in [
+        (10, 4, 1),
+        (0, 1, 1),
+        (3, 8, 1),
         (0x7F, 0xFF, 1),
-        (0x80, 0x01, 1),
-    ]
-
-    for a, b, cin in sub_vectors:
+        (0x80, 1, 1),
+    ]:
 
         expected, carry, overflow = arithmetic_expected(
-            a, b, 1, cin
+            a,
+            b,
+            1,
+            cin
         )
 
         await check_operation(
             dut,
             "SUB",
             make_instr(
-                0b01,
+                1,
                 mod_sub=1,
-                carry_in=cin,
+                carry_in=cin
             ),
             a,
             b,
@@ -269,12 +269,12 @@ async def test_project(dut):
             flags_expected(
                 expected,
                 carry,
-                overflow,
-            ),
+                overflow
+            )
         )
 
     # ------------------------------------------------------------------
-    # Logic
+    # LOGIC
     # ------------------------------------------------------------------
 
     logic_vectors = [
@@ -301,18 +301,15 @@ async def test_project(dut):
             await check_operation(
                 dut,
                 f"LOGIC op={op:02b}",
-                make_instr(
-                    0b10,
-                    op=op,
-                ),
+                make_instr(2, op=op),
                 a,
                 b,
                 expected,
-                flags_expected(expected),
+                flags_expected(expected)
             )
 
     # ------------------------------------------------------------------
-    # Barrel shifter
+    # SHIFTS
     # ------------------------------------------------------------------
 
     shift_vectors = [
@@ -330,7 +327,7 @@ async def test_project(dut):
         for amount in range(8):
 
             # ----------------------------------------------------------
-            # Left shift
+            # LEFT SHIFT
             # ----------------------------------------------------------
 
             expected = (a << amount) & MASK8
@@ -345,22 +342,20 @@ async def test_project(dut):
                 dut,
                 "SHIFT LEFT",
                 make_instr(
-                    0b00,
-                    shift_iz_der=0,
-                    shift_arit_right=0,
-                    shift_amount=amount,
+                    0,
+                    shift_amount=amount
                 ),
                 a,
                 0,
                 expected,
                 flags_expected(
                     expected,
-                    carry,
-                ),
+                    carry
+                )
             )
 
             # ----------------------------------------------------------
-            # Logical right shift
+            # LOGICAL RIGHT SHIFT
             # ----------------------------------------------------------
 
             expected = (a >> amount) & MASK8
@@ -375,22 +370,22 @@ async def test_project(dut):
                 dut,
                 "SHIFT RIGHT LOGICAL",
                 make_instr(
-                    0b00,
+                    0,
                     shift_iz_der=1,
                     shift_arit_right=0,
-                    shift_amount=amount,
+                    shift_amount=amount
                 ),
                 a,
                 0,
                 expected,
                 flags_expected(
                     expected,
-                    carry,
-                ),
+                    carry
+                )
             )
 
             # ----------------------------------------------------------
-            # Arithmetic right shift
+            # ARITHMETIC RIGHT SHIFT
             # ----------------------------------------------------------
 
             expected = (
@@ -401,22 +396,22 @@ async def test_project(dut):
                 dut,
                 "SHIFT RIGHT ARITHMETIC",
                 make_instr(
-                    0b00,
+                    0,
                     shift_iz_der=1,
                     shift_arit_right=1,
-                    shift_amount=amount,
+                    shift_amount=amount
                 ),
                 a,
                 0,
                 expected,
                 flags_expected(
                     expected,
-                    carry,
-                ),
+                    carry
+                )
             )
 
     # ------------------------------------------------------------------
-    # Pass-through
+    # PASS THROUGH
     # ------------------------------------------------------------------
 
     for a in [
@@ -430,13 +425,11 @@ async def test_project(dut):
         await check_operation(
             dut,
             "PASS THROUGH",
-            make_instr(0b11),
+            make_instr(3),
             a,
             0,
             a,
-            flags_expected(a),
+            flags_expected(a)
         )
 
-    dut._log.info(
-        "All ALU integration tests passed successfully"
-    )
+    dut._log.info("All integration tests passed")

@@ -12,17 +12,20 @@ PROJECT_SOURCES = project.v alu_top.v arithmetic.v barrel_shifter.v decoder_alu.
 ifneq ($(GATES),yes)
 # RTL simulation:
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-# ¡Crucial! Debemos incluir el testbench en la simulación
-VERILOG_SOURCES += $(PWD)/tb.v
 COMPILE_ARGS += -I $(SRC_DIR)
 else
 # Gate level simulation:
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
-VERILOG_SOURCES += $(PWD)/tb.v
+# Banderas críticas para simular las celdas estándar de IHP
+COMPILE_ARGS += -DGL_TEST
+COMPILE_ARGS += -DFUNCTIONAL
+COMPILE_ARGS += -DUSE_POWER_PINS
+COMPILE_ARGS += -DSIM
+COMPILE_ARGS += -DUNIT_DELAY=\#1
 endif
 
-# TOPLEVEL is the name of the toplevel module in your Verilog testbench
-# En Tiny Tapeout, la simulación SIEMPRE arranca desde 'tb'
+# Include the testbench sources:
+VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # MODULE is the basename of the Python test file (test.py)

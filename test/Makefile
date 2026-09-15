@@ -1,32 +1,56 @@
-# Makefile
-# See https://docs.cocotb.org/en/stable/quickstart.html for more info
 
-# defaults
+# Makefile
+# Cocotb simulation for TinyTapeout IHP SG13G2
+
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
-SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v alu_top.v arithmetic.v barrel_shifter.v decoder_alu.v logic.v
 
+SRC_DIR = $(PWD)/../src
+
+PROJECT_SOURCES = \
+    project.v \
+    alu_top.v \
+    arithmetic.v \
+    barrel_shifter.v \
+    decoder_alu.v \
+    logic.v
+
+# RTL / Gate-level simulation
 ifneq ($(GATES),yes)
-# RTL simulation:
+
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 COMPILE_ARGS += -I $(SRC_DIR)
+
 else
-# Gate level simulation for IHP (sg13g2)
-# Se incluye el netlist sintetizado y los modelos primitivos del PDK que exige Icarus
+
+# Gate-level simulation for IHP SG13G2
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
-# Si el entorno de Tiny Tapeout IHP expone las celdas primitivas del PDK, las enlazamos:
+
+# Include IHP PDK Verilog models only when they exist.
+# Do not hard-code a required sg13g2_ivt.v path.
+
 ifdef PDK_ROOT
-VERILOG_SOURCES += $(PDK_ROOT)/sg13g2/libs.ref/sg13g2_ivt/verilog/sg13g2_ivt.v
-endif
+
+PDK_SG13G2 = $(PDK_ROOT)/sg13g2
+
+# Standard-cell Verilog models
+VERILOG_SOURCES += $(wildcard $(PDK_SG13G2)/libs.ref/sg13g2_stdcell/verilog/*.v)
+
+# I/O cell Verilog models
+VERILOG_SOURCES += $(wildcard $(PDK_SG13G2)/libs.ref/sg13g2_io/verilog/*.v)
+
+# IVT models, if provided by this PDK installation
+VERILOG_SOURCES += $(wildcard $(PDK_SG13G2)/libs.ref/sg13g2_ivt/verilog/*.v)
+
 endif
 
-# Include the testbench sources:
+endif
+
+# Testbench
 VERILOG_SOURCES += $(PWD)/tb.v
-TOPLEVEL = tb
 
-# MODULE is the basename of the Python test file (test.py)
+TOPLEVEL = tb
 MODULE = test
 
-# include cocotb's make rules to take care of the simulator setup
+# Cocotb
 include $(shell cocotb-config --makefiles)/Makefile.sim

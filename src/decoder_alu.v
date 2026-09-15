@@ -15,7 +15,10 @@ module decoder_alu
 );
 
 // guardar datos
-reg [7:0] reg_inst; // instruccion
+/* verilator lint_off UNUSEDSIGNAL */
+reg [7:0] reg_inst;
+/* verilator lint_on UNUSEDSIGNAL */
+// instruccion
 reg [7:0] reg_A;    // dato a
 reg [7:0] reg_B;    // dato b
 reg [1:0] counter;  // contador

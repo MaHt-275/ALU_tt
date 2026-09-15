@@ -15,29 +15,41 @@ PROJECT_SOURCES = \
 
 ifneq ($(GATES),yes)
 
-# RTL simulation
+# ---------------------------------------------------------------------------
+# Simulacion RTL  (make -B)
+# ---------------------------------------------------------------------------
+SIM_BUILD = sim_build/rtl
+
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 COMPILE_ARGS += -I $(SRC_DIR)
 
 else
 
-# Gate-level simulation
-VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
+# ---------------------------------------------------------------------------
+# Simulacion a nivel de compuertas  (make -B GATES=yes)
+# ---------------------------------------------------------------------------
+SIM_BUILD = sim_build/gl
 
-# Locate the IHP SG13G2 PDK models
+# Defines que usan el netlist post-layout y los modelos del PDK.
+COMPILE_ARGS += -DGL_TEST
+COMPILE_ARGS += -DFUNCTIONAL
+COMPILE_ARGS += -DSIM
+
+# Raiz del PDK. La accion de Tiny Tapeout la exporta como /home/runner/pdk.
 PDK_ROOT ?= /home/runner/pdk
 
-PDK_SG13G2_ROOT = $(PDK_ROOT)/sg13g2
+# OJO: la carpeta del PDK se llama "ihp-sg13g2", no "sg13g2".
+PDK_SG13G2_ROOT = $(PDK_ROOT)/ihp-sg13g2
 
-# Include every Verilog model found inside the SG13G2 PDK.
-# This includes standard cells, IO cells, fillers, decaps,
-# antenna cells and other physical cells.
-PDK_VERILOG_FILES := $(shell find $(PDK_SG13G2_ROOT) \
-	-type f \
-	-name "*.v" \
-	-print)
+# Modelos de celdas. Estos dos archivos contienen TODAS las celdas que
+# aparecen en el netlist (logica, flip-flops, buffers de retardo, tie,
+# fill y decap). No usar `find` sobre el PDK: arrastra vistas duplicadas
+# y rompe la elaboracion.
+VERILOG_SOURCES += $(PDK_SG13G2_ROOT)/libs.ref/sg13g2_io/verilog/sg13g2_io.v
+VERILOG_SOURCES += $(PDK_SG13G2_ROOT)/libs.ref/sg13g2_stdcell/verilog/sg13g2_stdcell.v
 
-VERILOG_SOURCES += $(PDK_VERILOG_FILES)
+# Netlist de compuertas: lo copia aqui el job gl_test de la accion GDS.
+VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 
 endif
 

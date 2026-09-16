@@ -1,10 +1,10 @@
 # info.yaml
 # Tiny Tapeout project information
 project:
-  title:        "ALU de 8 bits"
+  title:        "ALU CASS PUCV"
   author:       "CASS PUCV"
   discord:      "oryan01"
-  description:  "aaaaaaaaaaaaa"
+  description:  "ALU de 8 bits con interfaz serial de 24 pines (FSM de 3 estados); soporta operaciones aritméticas, lógicas y de desplazamiento vía opcode de control."
   language:     "Verilog"
   clock_hz:     10000000
 

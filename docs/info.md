@@ -28,9 +28,11 @@ los primeros 2 bit mas significaticos estan reservados para definir que operacio
 01: Operaciones Aritméticas
 10: Operaciones Lógicas
 11: Paso Directo (Bypass)
+
 -----------------------------------------------------------------------
 intrucciones por Type
 -----------------------------------------------------------------------
+
 Type 00 Desplazamiento:
 estructura de Señal control: 00DASSSX
 00 indica type
@@ -54,6 +56,7 @@ SSS indica en binario la cantidad a desplazar
 111 Desplaza 7
 
 X valor sobrante
+
 ------------------------------------------------------------------------
 
 Type 01 Aritmerica
@@ -69,7 +72,9 @@ C Indica si Carry-in.
 1 Verdadero.
 
 X valor sobrante.
+
 -----------------------------------------------------------------------
+
 Type 10 Logico
 
 estructura de Señal control:10LLXXXX
@@ -82,6 +87,7 @@ LL Indica operacion a realizar
 11 Not A
 
 X valor sobrante
+
 ------------------------------------------------------------------------
 Type 11 Bypass
 estructura de Señal control: 11XXXXXX

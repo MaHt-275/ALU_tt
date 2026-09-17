@@ -20,3 +20,70 @@ Nota de diseño relevante: en modo resta con `carry_in = 0`, el resultado es `A 
 
 ## How to test
 Para probar este diseño, se deben asignar los valores de entrada a través de los pines correspondientes y observar los resultados en los pines de salida. (Agreguen un par de líneas sobre qué estímulos aplican en los testbench).
+
+INSTRUCCIONES ALU
+el control es una palabra de 8 bits
+los primeros 2 bit mas significaticos estan reservados para definir que operacion donde:
+00: Operaciones de Desplazamiento (Shift)
+01: Operaciones Aritméticas
+10: Operaciones Lógicas
+11: Paso Directo (Bypass)
+-----------------------------------------------------------------------
+intrucciones por Type
+-----------------------------------------------------------------------
+Type 00 Desplazamiento:
+estructura de Señal control: 00DASSSX
+00 indica type
+
+D direccion de desplazamiento: 
+0 izquierda. 
+1 derecha.
+
+A Indica si el desplazamiento a la derecha es o no aritmetico: 
+0 logico. 
+1 aritmetico.
+
+SSS indica en binario la cantidad a desplazar
+000 No desplaza
+001 Desplaza 1
+010 Desplaza 2
+011 Desplaza 3
+100 Desplaza 4
+101 Desplaza 5
+110 Desplaza 6
+111 Desplaza 7
+
+X valor sobrante
+------------------------------------------------------------------------
+
+Type 01 Aritmerica
+estructura de Señal control: 01TCXXXX.
+01 indica Type.
+
+T indica si suma o resta.
+0 Suma.
+1 resta(sin Carry-in).
+
+C Indica si Carry-in.
+0 Falso.
+1 Verdadero.
+
+X valor sobrante.
+-----------------------------------------------------------------------
+Type 10 Logico
+
+estructura de Señal control:10LLXXXX
+10 indica Type
+
+LL Indica operacion a realizar
+00 A and B
+01 A or B
+10 A Xor B
+11 Not A
+
+X valor sobrante
+------------------------------------------------------------------------
+Type 11 Bypass
+estructura de Señal control: 11XXXXXX
+Este pasa directo el valor del resgistro A hacia la salida
+------------------------------------------------------------------------
